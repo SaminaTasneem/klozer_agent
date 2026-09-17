@@ -7,13 +7,22 @@ import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
-  View
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { WebView } from "react-native-webview";
+import { WebView, type WebViewMessageEvent } from "react-native-webview";
+import {
+  addAudioRouteListener,
+  disableProximityMonitoring,
+  getCurrentAudioRoute,
+  isAudioRouteAvailable,
+  setAudioRoute,
+  type AudioRoute,
+} from "../../modules/expo-audio-route/src";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -24,20 +33,45 @@ Notifications.setNotificationHandler({
   }),
 });
 
+type DialerLoadError = "checking" | "network" | "wrongNumber" | null;
+
+const INTERNET_CHECK_URL = "https://klozer.app";
+const INTERNET_CHECK_TIMEOUT_MS = 6000;
+
 export default function DialerScreen() {
   const { number } = useLocalSearchParams<{ number?: string }>();
   const [webViewKey, setWebViewKey] = useState(0);
-  const [hasError, setHasError] = useState(false);
+  const [loadError, setLoadError] = useState<DialerLoadError>(null);
   const [currentUrl, setCurrentUrl] = useState("");
+  const [audioRoute, setCurrentAudioRoute] =
+    useState<AudioRoute>("speaker");
+  const [isChangingAudioRoute, setIsChangingAudioRoute] = useState(false);
   // const [isAgentLoggedOut, setIsAgentLoggedOut] = useState(false);
   type AgentSessionState = "unknown" | "loggedIn" | "loggedOut";
   const [agentSessionState, setAgentSessionState] =
     useState<AgentSessionState>("loggedOut");
   const DIALER_STORAGE_KEY = "remembered-dialer-number";
   const agentLoginNotificationId = useRef<string | null>(null);
+  const errorCheckId = useRef(0);
 
   useEffect(() => {
     Notifications.requestPermissionsAsync();
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== "ios" || !isAudioRouteAvailable) {
+      return;
+    }
+
+    setCurrentAudioRoute(getCurrentAudioRoute());
+    const subscription = addAudioRouteListener(({ route }) => {
+      setCurrentAudioRoute(route);
+    });
+
+    return () => {
+      subscription?.remove();
+      void disableProximityMonitoring();
+    };
   }, []);
 
   // const currentAppState = useRef<AppStateStatus>(AppState.currentState);
@@ -129,7 +163,39 @@ export default function DialerScreen() {
     }
   };
 
-  const handleWebViewMessage = (event) => {
+  const toggleAudioRoute = async () => {
+    if (!isAudioRouteAvailable) {
+      Alert.alert(
+        "Audio controls unavailable",
+        "Rebuild the iOS app to install the audio-route controls.",
+      );
+      return;
+    }
+
+    if (audioRoute === "headphones") {
+      Alert.alert(
+        "Headphones connected",
+        "Disconnect your headphones to choose between the earpiece and speaker.",
+      );
+      return;
+    }
+
+    setIsChangingAudioRoute(true);
+
+    try {
+      const nextRoute = audioRoute === "speaker" ? "earpiece" : "speaker";
+      setCurrentAudioRoute(await setAudioRoute(nextRoute));
+    } catch {
+      Alert.alert(
+        "Could not change audio output",
+        "Make sure a call is active, then try again.",
+      );
+    } finally {
+      setIsChangingAudioRoute(false);
+    }
+  };
+
+  const handleWebViewMessage = (event: WebViewMessageEvent) => {
     try {
       const message = JSON.parse(event.nativeEvent.data);
 
@@ -150,6 +216,59 @@ export default function DialerScreen() {
   // const visibleUrl = (currentUrl || dialerUrl).replace(/^https?:\/\//, "");
   const visibleUrl = `Dialer ${dialerNumber}`;
 
+  const checkInternetConnection = async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      INTERNET_CHECK_TIMEOUT_MS,
+    );
+
+    try {
+      await fetch(INTERNET_CHECK_URL, {
+        cache: "no-store",
+        method: "HEAD",
+        signal: controller.signal,
+      });
+      return true;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
+
+  const handleWebViewError = async () => {
+    const checkId = errorCheckId.current + 1;
+    errorCheckId.current = checkId;
+    setLoadError("checking");
+
+    const hasInternet = await checkInternetConnection();
+
+    if (errorCheckId.current !== checkId) {
+      return;
+    }
+
+    setLoadError(hasInternet ? "wrongNumber" : "network");
+  };
+
+  const retryDialer = () => {
+    errorCheckId.current += 1;
+    setLoadError(null);
+    setWebViewKey((key) => key + 1);
+  };
+
+  const changeDialerNumber = async () => {
+    const savedNumber = await AsyncStorage.getItem(DIALER_STORAGE_KEY).catch(
+      () => null,
+    );
+
+    if (savedNumber === dialerNumber) {
+      await AsyncStorage.removeItem(DIALER_STORAGE_KEY).catch(() => {});
+    }
+
+    router.replace("/");
+  };
+
   if (!dialerNumber) {
     return (
       <View style={styles.messageContainer}>
@@ -161,24 +280,52 @@ export default function DialerScreen() {
     );
   }
 
-  if (hasError) {
+  if (loadError) {
+    const isChecking = loadError === "checking";
+    const isWrongNumber = loadError === "wrongNumber";
+
     return (
       <View style={styles.messageContainer}>
-        <SymbolView name="wifi.exclamationmark" tintColor="#08d7ae" size={42} />
-        <Text style={styles.messageTitle}>Could not reach this dialer</Text>
-        <Text style={styles.messageText}>{dialerUrl}</Text>
-        <Pressable
-          onPress={() => {
-            setHasError(false);
-            setWebViewKey((key) => key + 1);
-          }}
-          style={({ pressed }) => [
-            styles.retryButton,
-            pressed && styles.retryButtonPressed,
-          ]}
-        >
-          <Text style={styles.retryButtonText}>TRY AGAIN</Text>
-        </Pressable>
+        {isChecking ? (
+          <ActivityIndicator color="#08d7ae" size="large" />
+        ) : (
+          <SymbolView
+            name={
+              isWrongNumber
+                ? "exclamationmark.triangle"
+                : "wifi.exclamationmark"
+            }
+            tintColor="#08d7ae"
+            size={42}
+          />
+        )}
+        <Text style={styles.messageTitle}>
+          {isChecking
+            ? "Checking connection"
+            : isWrongNumber
+              ? "Wrong dialer number"
+              : "Internet connection is unstable"}
+        </Text>
+        <Text style={styles.messageText}>
+          {isChecking
+            ? "Please wait while we check your internet connection."
+            : isWrongNumber
+              ? `Dialer ${dialerNumber} could not be found. Check the number and try again.`
+              : "Check your internet connection, then try again."}
+        </Text>
+        {!isChecking ? (
+          <Pressable
+            onPress={isWrongNumber ? changeDialerNumber : retryDialer}
+            style={({ pressed }) => [
+              styles.retryButton,
+              pressed && styles.retryButtonPressed,
+            ]}
+          >
+            <Text style={styles.retryButtonText}>
+              {isWrongNumber ? "CHANGE NUMBER" : "TRY AGAIN"}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
     );
   }
@@ -192,6 +339,32 @@ export default function DialerScreen() {
             {visibleUrl}
           </Text>
         </View>
+        {Platform.OS === "ios" ? (
+          <Pressable
+            accessibilityLabel={`Audio output: ${audioRoute}`}
+            accessibilityRole="button"
+            disabled={isChangingAudioRoute}
+            hitSlop={8}
+            onPress={() => void toggleAudioRoute()}
+            style={({ pressed }) => [
+              styles.audioRouteButton,
+              pressed && styles.headerButtonPressed,
+              isChangingAudioRoute && styles.headerButtonDisabled,
+            ]}
+          >
+            <SymbolView
+              name={
+                audioRoute === "headphones"
+                  ? "headphones"
+                  : audioRoute === "earpiece"
+                    ? "ear"
+                    : "speaker.wave.2.fill"
+              }
+              tintColor="#08d7ae"
+              size={27}
+            />
+          </Pressable>
+        ) : null}
         <Pressable
           accessibilityLabel="Log out"
           accessibilityRole="button"
@@ -199,7 +372,7 @@ export default function DialerScreen() {
           onPress={handleLogout}
           style={({ pressed }) => [
             styles.logoutButton,
-            pressed && styles.logoutButtonPressed,
+            pressed && styles.headerButtonPressed,
           ]}
         >
           <SymbolView
@@ -221,7 +394,7 @@ export default function DialerScreen() {
           javaScriptEnabled
           webviewDebuggingEnabled
           mediaPlaybackRequiresUserAction={false}
-          onError={() => setHasError(true)}
+          onError={() => void handleWebViewError()}
           onNavigationStateChange={(state) => setCurrentUrl(state.url)}
           renderLoading={() => (
             <View style={styles.loadingContainer}>
@@ -273,8 +446,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 48,
   },
-  logoutButtonPressed: {
+  audioRouteButton: {
+    alignItems: "center",
+    height: 48,
+    justifyContent: "center",
+    marginRight: 4,
+    width: 48,
+  },
+  headerButtonPressed: {
     opacity: 0.6,
+  },
+  headerButtonDisabled: {
+    opacity: 0.45,
   },
   webViewContainer: {
     flex: 1,
