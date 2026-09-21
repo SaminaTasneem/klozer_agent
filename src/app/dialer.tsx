@@ -1,4 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  getRecordingPermissionsAsync,
+  requestRecordingPermissionsAsync,
+} from "expo-audio";
 import * as Notifications from "expo-notifications";
 import { router, useLocalSearchParams } from "expo-router";
 import { usePreventRemove } from "expo-router/build/react-navigation/native";
@@ -7,6 +11,8 @@ import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  AppState,
+  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -34,8 +40,13 @@ Notifications.setNotificationHandler({
 });
 
 type DialerLoadError = "checking" | "network" | "wrongNumber" | null;
+type MicrophonePermissionState =
+  | "checking"
+  | "prompt"
+  | "denied"
+  | "granted";
 
-const INTERNET_CHECK_URL = "https://klozer.app";
+const INTERNET_CHECK_URL = "https://www.google.com";
 const INTERNET_CHECK_TIMEOUT_MS = 6000;
 
 export default function DialerScreen() {
@@ -43,8 +54,10 @@ export default function DialerScreen() {
   const [webViewKey, setWebViewKey] = useState(0);
   const [loadError, setLoadError] = useState<DialerLoadError>(null);
   const [currentUrl, setCurrentUrl] = useState("");
-  const [audioRoute, setCurrentAudioRoute] =
-    useState<AudioRoute>("speaker");
+  const [microphonePermission, setMicrophonePermission] =
+    useState<MicrophonePermissionState>("checking");
+  const [isRequestingMicrophone, setIsRequestingMicrophone] = useState(false);
+  const [audioRoute, setCurrentAudioRoute] = useState<AudioRoute>("speaker");
   const [isChangingAudioRoute, setIsChangingAudioRoute] = useState(false);
   // const [isAgentLoggedOut, setIsAgentLoggedOut] = useState(false);
   type AgentSessionState = "unknown" | "loggedIn" | "loggedOut";
@@ -56,6 +69,44 @@ export default function DialerScreen() {
 
   useEffect(() => {
     Notifications.requestPermissionsAsync();
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const refreshMicrophonePermission = () => {
+      void getRecordingPermissionsAsync()
+        .then((permission) => {
+          if (!isMounted) {
+            return;
+          }
+
+          setMicrophonePermission(
+            permission.granted
+              ? "granted"
+              : permission.canAskAgain
+                ? "prompt"
+                : "denied",
+          );
+        })
+        .catch(() => {
+          if (isMounted) {
+            setMicrophonePermission("prompt");
+          }
+        });
+    };
+
+    refreshMicrophonePermission();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        refreshMicrophonePermission();
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -73,6 +124,22 @@ export default function DialerScreen() {
       void disableProximityMonitoring();
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      agentSessionState !== "loggedIn" ||
+      Platform.OS !== "ios" ||
+      !isAudioRouteAvailable
+    ) {
+      return;
+    }
+
+    void setAudioRoute("speaker")
+      .then(setCurrentAudioRoute)
+      .catch(() => {
+        setCurrentAudioRoute(getCurrentAudioRoute());
+      });
+  }, [agentSessionState]);
 
   // const currentAppState = useRef<AppStateStatus>(AppState.currentState);
   // const reminderNotificationId = useRef<string | null>(null);
@@ -269,6 +336,28 @@ export default function DialerScreen() {
     router.replace("/");
   };
 
+  const requestMicrophoneAccess = async () => {
+    setIsRequestingMicrophone(true);
+
+    try {
+      const permission = await requestRecordingPermissionsAsync();
+      setMicrophonePermission(
+        permission.granted
+          ? "granted"
+          : permission.canAskAgain
+            ? "prompt"
+            : "denied",
+      );
+    } catch {
+      Alert.alert(
+        "Permission request failed",
+        "Klozer Agent could not request microphone access. Please try again.",
+      );
+    } finally {
+      setIsRequestingMicrophone(false);
+    }
+  };
+
   if (!dialerNumber) {
     return (
       <View style={styles.messageContainer}>
@@ -277,6 +366,58 @@ export default function DialerScreen() {
           Go back and enter a valid dialer site number.
         </Text>
       </View>
+    );
+  }
+
+  if (microphonePermission !== "granted") {
+    const isCheckingPermission = microphonePermission === "checking";
+    const isPermissionDenied = microphonePermission === "denied";
+
+    return (
+      <SafeAreaView edges={["top", "bottom"]} style={styles.permissionScreen}>
+        <View style={styles.permissionIconContainer}>
+          {isCheckingPermission ? (
+            <ActivityIndicator color="#08d7ae" size="large" />
+          ) : (
+            <SymbolView name="mic.fill" tintColor="#08d7ae" size={48} />
+          )}
+        </View>
+        <Text style={styles.permissionTitle}>
+          {isCheckingPermission
+            ? "Checking microphone access"
+            : "Microphone access required"}
+        </Text>
+        <Text style={styles.permissionText}>
+          {isCheckingPermission
+            ? "Please wait a moment."
+            : isPermissionDenied
+              ? "Microphone access is disabled. Enable it in Settings so you can make and receive calls."
+              : "Klozer Agent uses your microphone during dialer calls so the other person can hear you."}
+        </Text>
+        {!isCheckingPermission ? (
+          <Pressable
+            disabled={isRequestingMicrophone}
+            onPress={() =>
+              void (isPermissionDenied
+                ? Linking.openSettings()
+                : requestMicrophoneAccess())
+            }
+            style={({ pressed }) => [
+              styles.permissionButton,
+              pressed && styles.retryButtonPressed,
+              isRequestingMicrophone && styles.headerButtonDisabled,
+            ]}
+          >
+            {isRequestingMicrophone ? (
+              <ActivityIndicator color="#020202" />
+            ) : (
+              <Text style={styles.permissionButtonText}>
+                {isPermissionDenied ? "OPEN SETTINGS" : "CONTINUE"}
+              </Text>
+            )}
+          </Pressable>
+        ) : null}
+      </SafeAreaView>
     );
   }
 
@@ -387,7 +528,7 @@ export default function DialerScreen() {
         <WebView
           key={webViewKey}
           ignoreSilentHardwareSwitch
-          mediaCapturePermissionGrantType="prompt"
+          mediaCapturePermissionGrantType="grantIfSameHostElsePrompt"
           allowsInlineMediaPlayback
           domStorageEnabled
           incognito
@@ -411,6 +552,52 @@ export default function DialerScreen() {
 }
 
 const styles = StyleSheet.create({
+  permissionScreen: {
+    alignItems: "center",
+    backgroundColor: "#050505",
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 34,
+  },
+  permissionIconContainer: {
+    alignItems: "center",
+    backgroundColor: "#102923",
+    borderColor: "#08d7ae",
+    borderRadius: 52,
+    borderWidth: 1,
+    height: 104,
+    justifyContent: "center",
+    width: 104,
+  },
+  permissionTitle: {
+    color: "#ffffff",
+    fontSize: 25,
+    fontWeight: "700",
+    marginTop: 28,
+    textAlign: "center",
+  },
+  permissionText: {
+    color: "#a8afb2",
+    fontSize: 16,
+    lineHeight: 24,
+    marginTop: 14,
+    maxWidth: 360,
+    textAlign: "center",
+  },
+  permissionButton: {
+    alignItems: "center",
+    backgroundColor: "#08d7ae",
+    borderRadius: 9,
+    height: 52,
+    justifyContent: "center",
+    marginTop: 32,
+    width: 210,
+  },
+  permissionButtonText: {
+    color: "#020202",
+    fontSize: 15,
+    fontWeight: "800",
+  },
   safeArea: {
     backgroundColor: "#050505",
     flex: 1,
