@@ -18600,6 +18600,10 @@ if ($window_validation > 0) {
 		// Generate the Presets Chooser span content
 		function generate_presets_pulldown(PREclick) {
 			if (PREclick == 'YES') { button_click_log = button_click_log + "" + SQLdate + "-----generate_presets_pulldown---|"; }
+			var presetsOverlay = document.getElementById('PresetsSelectBox');
+			if (presetsOverlay && presetsOverlay.parentElement !== document.body) {
+				document.body.appendChild(presetsOverlay);
+			}
 			showDivVisible('PresetsSelectBox');
 			Presets_HTML = '';
 			if (document.vicidial_form.PresetSelection) {
@@ -26183,6 +26187,20 @@ change theme version 1.5.2
 				font-weight: bold;
 				color: #00d1b2;
 			}
+
+			/* Keep nested transfer dialogs in a predictable global stack. */
+			#TransferMain {
+				z-index: 2147483000 !important;
+			}
+
+			#AgentXferViewSpan {
+				z-index: 2147483001 !important;
+			}
+
+			#PresetsSelectBox {
+				z-index: 2147483002 !important;
+			}
+
 			@media screen and (max-width: 767px) {
 			#TransferMain {
 				position: fixed !important;
@@ -26351,6 +26369,11 @@ change theme version 1.5.2
 			}
 
 			#TransferMain .agetn_btn_col {
+				display: grid !important;
+				grid-template-columns: minmax(0, 1fr) 132px !important;
+				align-items: end !important;
+				gap: 14px !important;
+				width: 100% !important;
 				margin: 4px 0 0 !important;
 			}
 
@@ -26369,6 +26392,39 @@ change theme version 1.5.2
 
 			#TransferMain .custom-radio .radio-label {
 				font-size: 14px !important;
+			}
+
+			#TransferMain #agentdirectlink {
+				width: 132px !important;
+				min-width: 132px !important;
+				margin: 0 !important;
+				padding: 0 !important;
+				box-sizing: border-box !important;
+			}
+
+			#TransferMain #agentdirectlink .radio-btn {
+				display: flex !important;
+				align-items: center !important;
+				justify-content: center !important;
+				width: 100% !important;
+				height: 46px !important;
+				min-width: 0 !important;
+				margin: 0 !important;
+				padding: 0 12px !important;
+				box-sizing: border-box !important;
+				border-radius: 8px !important;
+				white-space: nowrap !important;
+				text-align: center !important;
+			}
+
+			#TransferMain #agentdirectlink .radio-btn label {
+				display: block !important;
+				margin: 0 !important;
+				padding: 0 !important;
+				font-size: 14px !important;
+				font-weight: 700 !important;
+				line-height: 1 !important;
+				white-space: nowrap !important;
 			}
 
 			#TransferMain .width-30 {
@@ -26427,6 +26483,27 @@ change theme version 1.5.2
 
 				#TransferMain #LocalCloser .btn_closer {
 					width: 100% !important;
+				}
+
+				#TransferMain .agetn_btn_col {
+					grid-template-columns: minmax(0, 1fr) 118px !important;
+					gap: 10px !important;
+				}
+
+				#TransferMain #agentdirectlink {
+					width: 118px !important;
+					min-width: 118px !important;
+				}
+			}
+
+			@media screen and (max-width: 350px) {
+				#TransferMain .agetn_btn_col {
+					grid-template-columns: 1fr !important;
+				}
+
+				#TransferMain #agentdirectlink {
+					width: 100% !important;
+					min-width: 0 !important;
 				}
 			}
 			}
@@ -29498,10 +29575,10 @@ echo $zi ?>; display: block; left: 468px; top:254px !important; visibility: visi
 		</span>
 
 
-		<!-- <span style="visibility:hidden;position:fixed;left:0px;top:0px;width:100%;height:100%;z-index:<?php $zi++;
+		<span style="visibility:hidden;position:fixed;left:0px;top:0px;width:100%;height:100%;z-index:<?php $zi++;
 		echo $zi ?>;background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px); color: rgb(255, 255, 255);"
-			id="TransferMain"> -->
-		<div
+			id="TransferMain">
+		<!-- <div
 			id="TransferMain"
 			style="
 				visibility: hidden;
@@ -29515,7 +29592,7 @@ echo $zi ?>; display: block; left: 468px; top:254px !important; visibility: visi
 				background: rgba(0, 0, 0, 0.7);
 				z-index: 2147483000;
 			"
-			>
+			> -->
 			<div class="popup_overlay_transfer">
 				<div class="popup_content_transfer">
 					<div class="flex justify-between items-center mb-35">
@@ -29656,8 +29733,8 @@ echo $zi ?>; display: block; left: 468px; top:254px !important; visibility: visi
 							<a class='btn-park' style='padding: 14px 54px;'>
 								<?php echo _QXZ("VM"); ?>
 							</a></span>
-		<!-- </span> -->
-		</div>
+		</span>
+		<!-- </div> -->
 		<?php if ($enable_xfer_presets == 'ENABLED') { ?>
 			<span id="PresetPullDown"><a class='btn-park' href="#" onclick="generate_presets_pulldown();return false;"
 					style='padding: 14px 24px;'>
@@ -29685,17 +29762,19 @@ echo $zi ?>; display: block; left: 468px; top:254px !important; visibility: visi
 		</div>
 		<script>
 			(function () {
-				function moveTransferPopupToBody() {
-					var transferPopup = document.getElementById('TransferMain');
-					if (transferPopup && transferPopup.parentElement !== document.body) {
-						document.body.appendChild(transferPopup);
-					}
+				function moveTransferOverlaysToBody() {
+					['TransferMain', 'AgentXferViewSpan', 'PresetsSelectBox'].forEach(function (overlayId) {
+						var overlay = document.getElementById(overlayId);
+						if (overlay && overlay.parentElement !== document.body) {
+							document.body.appendChild(overlay);
+						}
+					});
 				}
 
 				if (document.readyState === 'loading') {
-					document.addEventListener('DOMContentLoaded', moveTransferPopupToBody);
+					document.addEventListener('DOMContentLoaded', moveTransferOverlaysToBody);
 				} else {
-					moveTransferPopupToBody();
+					moveTransferOverlaysToBody();
 				}
 			}());
 		</script>
@@ -31109,7 +31188,7 @@ end
 
 				<?php //end AUDIT COMMENTS ADDED BY POUNDTEAM // ?>
 
-				<span class='col-md-12'
+				<div class='col-md-12'
 					style="visibility:hidden;background-color: rgba(0, 33, 48, 0.95) !important;backdrop-filter: blur(8px);height:100%;width:100%;position:fixed;left:0px;top:0px;z-index:<?php $zi++;
 					echo $zi ?>;"
 					id="PresetsSelectBox">
@@ -31129,13 +31208,13 @@ end
 											</h3>
 										</div>
 										<div id="PresetsSelectBoxContent"> </div>
-										<input type="hidden" name="PresetSelection" id="PresetSelection" /><br />
+										<input type="hidden" name="PresetSelection" id="PresetSelection" form="vicidial_form" /><br />
 									</div>
 								</div>
 							</div>
 						</div>
 					</div>
-				</span>
+				</div>
 
 				<span class='col-md-12' style="visibility:hidden;background-color: #002130 !important;height:100%;width:100%;position:fixed;left:0px;top:0px;z-index:<?php $zi++;
 				echo $zi ?>;" id="CloserSelectBox">

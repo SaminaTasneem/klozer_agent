@@ -40,11 +40,7 @@ Notifications.setNotificationHandler({
 });
 
 type DialerLoadError = "checking" | "network" | "wrongNumber" | null;
-type MicrophonePermissionState =
-  | "checking"
-  | "prompt"
-  | "denied"
-  | "granted";
+type MicrophonePermissionState = "checking" | "prompt" | "denied" | "granted";
 
 const INTERNET_CHECK_URL = "https://www.google.com";
 const INTERNET_CHECK_TIMEOUT_MS = 6000;
@@ -66,6 +62,33 @@ export default function DialerScreen() {
   const DIALER_STORAGE_KEY = "remembered-dialer-number";
   const agentLoginNotificationId = useRef<string | null>(null);
   const errorCheckId = useRef(0);
+  const [audioRouteMessage, setAudioRouteMessage] = useState<string | null>(
+    null,
+  );
+  const audioRouteMessageTimer = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  const showAudioRouteMessage = (message: string) => {
+    setAudioRouteMessage(message);
+
+    if (audioRouteMessageTimer.current) {
+      clearTimeout(audioRouteMessageTimer.current);
+    }
+
+    audioRouteMessageTimer.current = setTimeout(() => {
+      setAudioRouteMessage(null);
+      audioRouteMessageTimer.current = null;
+    }, 2000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (audioRouteMessageTimer.current) {
+        clearTimeout(audioRouteMessageTimer.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     Notifications.requestPermissionsAsync();
@@ -117,6 +140,14 @@ export default function DialerScreen() {
     setCurrentAudioRoute(getCurrentAudioRoute());
     const subscription = addAudioRouteListener(({ route }) => {
       setCurrentAudioRoute(route);
+
+      showAudioRouteMessage(
+        route === "headphones"
+          ? "Headphones connected"
+          : route === "speaker"
+            ? "Audio switched to loudspeaker"
+            : "Audio switched to earpiece",
+      );
     });
 
     return () => {
@@ -240,9 +271,13 @@ export default function DialerScreen() {
     }
 
     if (audioRoute === "headphones") {
-      Alert.alert(
-        "Headphones connected",
-        "Disconnect your headphones to choose between the earpiece and speaker.",
+      // Alert.alert(
+      //   "Headphones connected",
+      //   "Disconnect your headphones to choose between the earpiece and speaker.",
+      // );
+      // return;
+      showAudioRouteMessage(
+        "Headphones are connected. Disconnect them to change audio output.",
       );
       return;
     }
@@ -251,7 +286,15 @@ export default function DialerScreen() {
 
     try {
       const nextRoute = audioRoute === "speaker" ? "earpiece" : "speaker";
-      setCurrentAudioRoute(await setAudioRoute(nextRoute));
+      const selectedRoute = await setAudioRoute(nextRoute);
+      setCurrentAudioRoute(selectedRoute);
+      showAudioRouteMessage(
+        selectedRoute === "speaker"
+          ? "Loudspeaker enabled"
+          : selectedRoute === "earpiece"
+            ? "Earpiece enabled"
+            : "Headphones connected",
+      );
     } catch {
       Alert.alert(
         "Could not change audio output",
@@ -498,7 +541,7 @@ export default function DialerScreen() {
                 audioRoute === "headphones"
                   ? "headphones"
                   : audioRoute === "earpiece"
-                    ? "ear"
+                    ? "phone.fill"
                     : "speaker.wave.2.fill"
               }
               tintColor="#08d7ae"
@@ -547,6 +590,23 @@ export default function DialerScreen() {
           onMessage={handleWebViewMessage}
         />
       </View>
+      {audioRouteMessage ? (
+        <View pointerEvents="none" style={styles.audioRouteToast}>
+          <SymbolView
+            name={
+              audioRoute === "headphones"
+                ? "headphones"
+                : audioRoute === "earpiece"
+                  ? "phone.fill"
+                  : "speaker.wave.2.fill"
+            }
+            tintColor="#08d7ae"
+            size={20}
+          />
+
+          <Text style={styles.audioRouteToastText}>{audioRouteMessage}</Text>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -696,5 +756,32 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "800",
     letterSpacing: 0,
+  },
+  audioRouteToast: {
+    position: "absolute",
+    bottom: 90,
+    left: 20,
+    right: 20,
+    minHeight: 52,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: "rgba(20, 35, 40, 0.96)",
+    borderWidth: 1,
+    borderColor: "#08d7ae",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    zIndex: 1000,
+    elevation: 10,
+  },
+
+  audioRouteToastText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
+    flexShrink: 1,
   },
 });
