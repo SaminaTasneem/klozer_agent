@@ -3,7 +3,7 @@ import {
   getRecordingPermissionsAsync,
   requestRecordingPermissionsAsync,
 } from "expo-audio";
-import * as Notifications from "expo-notifications";
+// import * as Notifications from "expo-notifications";
 import { router, useLocalSearchParams } from "expo-router";
 import { usePreventRemove } from "expo-router/build/react-navigation/native";
 import { SymbolView } from "expo-symbols";
@@ -13,11 +13,10 @@ import {
   Alert,
   AppState,
   Linking,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
-  View,
+  View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
@@ -30,14 +29,14 @@ import {
   type AudioRoute,
 } from "../../modules/expo-audio-route/src";
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+// Notifications.setNotificationHandler({
+//   handleNotification: async () => ({
+//     shouldShowBanner: true,
+//     shouldShowList: true,
+//     shouldPlaySound: true,
+//     shouldSetBadge: false,
+//   }),
+// });
 
 type DialerLoadError = "checking" | "network" | "wrongNumber" | null;
 type MicrophonePermissionState = "checking" | "prompt" | "denied" | "granted";
@@ -60,7 +59,7 @@ export default function DialerScreen() {
   const [agentSessionState, setAgentSessionState] =
     useState<AgentSessionState>("loggedOut");
   const DIALER_STORAGE_KEY = "remembered-dialer-number";
-  const agentLoginNotificationId = useRef<string | null>(null);
+  // const agentLoginNotificationId = useRef<string | null>(null);
   const errorCheckId = useRef(0);
   const [audioRouteMessage, setAudioRouteMessage] = useState<string | null>(
     null,
@@ -90,9 +89,9 @@ export default function DialerScreen() {
     };
   }, []);
 
-  useEffect(() => {
-    Notifications.requestPermissionsAsync();
-  }, []);
+  // useEffect(() => {
+  //   Notifications.requestPermissionsAsync();
+  // }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -133,7 +132,7 @@ export default function DialerScreen() {
   }, []);
 
   useEffect(() => {
-    if (Platform.OS !== "ios" || !isAudioRouteAvailable) {
+    if (!isAudioRouteAvailable) {
       return;
     }
 
@@ -157,11 +156,7 @@ export default function DialerScreen() {
   }, []);
 
   useEffect(() => {
-    if (
-      agentSessionState !== "loggedIn" ||
-      Platform.OS !== "ios" ||
-      !isAudioRouteAvailable
-    ) {
+    if (agentSessionState !== "loggedIn" || !isAudioRouteAvailable) {
       return;
     }
 
@@ -175,51 +170,51 @@ export default function DialerScreen() {
   // const currentAppState = useRef<AppStateStatus>(AppState.currentState);
   // const reminderNotificationId = useRef<string | null>(null);
 
-  useEffect(() => {
-    const updateAgentNotification = async () => {
-      if (agentSessionState === "loggedIn") {
-        const existingId = agentLoginNotificationId.current;
+  // useEffect(() => {
+  //   const updateAgentNotification = async () => {
+  //     if (agentSessionState === "loggedIn") {
+  //       const existingId = agentLoginNotificationId.current;
 
-        if (existingId) {
-          await Notifications.cancelScheduledNotificationAsync(
-            existingId,
-          ).catch(() => {});
-          await Notifications.dismissNotificationAsync(existingId).catch(
-            () => {},
-          );
-        }
+  //       if (existingId) {
+  //         await Notifications.cancelScheduledNotificationAsync(
+  //           existingId,
+  //         ).catch(() => {});
+  //         await Notifications.dismissNotificationAsync(existingId).catch(
+  //           () => {},
+  //         );
+  //       }
 
-        agentLoginNotificationId.current =
-          await Notifications.scheduleNotificationAsync({
-            content: {
-              title: "Agent logged in",
-              body: "You are currently logged in to the dialer.",
-              sound: "default",
-            },
-            trigger: null,
-          });
+  //       agentLoginNotificationId.current =
+  //         await Notifications.scheduleNotificationAsync({
+  //           content: {
+  //             title: "Agent logged in",
+  //             body: "You are currently logged in to the dialer.",
+  //             sound: "default",
+  //           },
+  //           trigger: null,
+  //         });
 
-        return;
-      }
+  //       return;
+  //     }
 
-      if (agentSessionState === "loggedOut") {
-        const id = agentLoginNotificationId.current;
+  //     if (agentSessionState === "loggedOut") {
+  //       const id = agentLoginNotificationId.current;
 
-        if (!id) {
-          return;
-        }
+  //       if (!id) {
+  //         return;
+  //       }
 
-        await Notifications.cancelScheduledNotificationAsync(id).catch(
-          () => {},
-        );
-        await Notifications.dismissNotificationAsync(id).catch(() => {});
+  //       await Notifications.cancelScheduledNotificationAsync(id).catch(
+  //         () => {},
+  //       );
+  //       await Notifications.dismissNotificationAsync(id).catch(() => {});
 
-        agentLoginNotificationId.current = null;
-      }
-    };
+  //       agentLoginNotificationId.current = null;
+  //     }
+  //   };
 
-    void updateAgentNotification();
-  }, [agentSessionState]);
+  //   void updateAgentNotification();
+  // }, [agentSessionState]);
 
   usePreventRemove(agentSessionState !== "loggedOut", () => {
     if (agentSessionState === "loggedIn") {
@@ -265,7 +260,7 @@ export default function DialerScreen() {
     if (!isAudioRouteAvailable) {
       Alert.alert(
         "Audio controls unavailable",
-        "Rebuild the iOS app to install the audio-route controls.",
+        "Install a development build of Klozer Agent to use audio-route controls.",
       );
       return;
     }
@@ -422,7 +417,11 @@ export default function DialerScreen() {
           {isCheckingPermission ? (
             <ActivityIndicator color="#08d7ae" size="large" />
           ) : (
-            <SymbolView name="mic.fill" tintColor="#08d7ae" size={48} />
+            <SymbolView
+              name={{ ios: "mic.fill", android: "mic", web: "mic" }}
+              tintColor="#08d7ae"
+              size={48}
+            />
           )}
         </View>
         <Text style={styles.permissionTitle}>
@@ -476,8 +475,16 @@ export default function DialerScreen() {
           <SymbolView
             name={
               isWrongNumber
-                ? "exclamationmark.triangle"
-                : "wifi.exclamationmark"
+                ? {
+                    ios: "exclamationmark.triangle",
+                    android: "warning",
+                    web: "warning",
+                  }
+                : {
+                    ios: "wifi.exclamationmark",
+                    android: "wifi_off",
+                    web: "wifi_off",
+                  }
             }
             tintColor="#08d7ae"
             size={42}
@@ -518,37 +525,53 @@ export default function DialerScreen() {
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
       <View style={styles.browserBar}>
         <View style={styles.addressBlock}>
-          <SymbolView name="lock.fill" tintColor="#8f969a" size={14} />
+          <SymbolView
+            name={{ ios: "lock.fill", android: "lock", web: "lock" }}
+            tintColor="#8f969a"
+            size={14}
+          />
           <Text numberOfLines={1} style={styles.addressText}>
             {visibleUrl}
           </Text>
         </View>
-        {Platform.OS === "ios" ? (
-          <Pressable
-            accessibilityLabel={`Audio output: ${audioRoute}`}
-            accessibilityRole="button"
-            disabled={isChangingAudioRoute}
-            hitSlop={8}
-            onPress={() => void toggleAudioRoute()}
-            style={({ pressed }) => [
-              styles.audioRouteButton,
-              pressed && styles.headerButtonPressed,
-              isChangingAudioRoute && styles.headerButtonDisabled,
-            ]}
-          >
-            <SymbolView
-              name={
-                audioRoute === "headphones"
-                  ? "headphones"
-                  : audioRoute === "earpiece"
-                    ? "phone.fill"
-                    : "speaker.wave.2.fill"
-              }
-              tintColor="#08d7ae"
-              size={27}
-            />
-          </Pressable>
-        ) : null}
+        {/* {Platform.OS === "ios" ? ( */}
+        <Pressable
+          accessibilityLabel={`Audio output: ${audioRoute}`}
+          accessibilityRole="button"
+          disabled={isChangingAudioRoute}
+          hitSlop={8}
+          onPress={() => void toggleAudioRoute()}
+          style={({ pressed }) => [
+            styles.audioRouteButton,
+            pressed && styles.headerButtonPressed,
+            isChangingAudioRoute && styles.headerButtonDisabled,
+          ]}
+        >
+          <SymbolView
+            name={
+              audioRoute === "headphones"
+                ? {
+                    ios: "headphones",
+                    android: "headphones",
+                    web: "headphones",
+                  }
+                : audioRoute === "earpiece"
+                  ? {
+                      ios: "phone.fill",
+                      android: "phone_in_talk",
+                      web: "phone_in_talk",
+                    }
+                  : {
+                      ios: "speaker.wave.2.fill",
+                      android: "volume_up",
+                      web: "volume_up",
+                    }
+            }
+            tintColor="#08d7ae"
+            size={27}
+          />
+        </Pressable>
+        {/* ) : null} */}
         <Pressable
           accessibilityLabel="Log out"
           accessibilityRole="button"
@@ -560,7 +583,11 @@ export default function DialerScreen() {
           ]}
         >
           <SymbolView
-            name="rectangle.portrait.and.arrow.right"
+            name={{
+              ios: "rectangle.portrait.and.arrow.right",
+              android: "logout",
+              web: "logout",
+            }}
             tintColor="#08d7ae"
             size={30}
           />
@@ -595,10 +622,22 @@ export default function DialerScreen() {
           <SymbolView
             name={
               audioRoute === "headphones"
-                ? "headphones"
+                ? {
+                    ios: "headphones",
+                    android: "headphones",
+                    web: "headphones",
+                  }
                 : audioRoute === "earpiece"
-                  ? "phone.fill"
-                  : "speaker.wave.2.fill"
+                  ? {
+                      ios: "phone.fill",
+                      android: "phone_in_talk",
+                      web: "phone_in_talk",
+                    }
+                  : {
+                      ios: "speaker.wave.2.fill",
+                      android: "volume_up",
+                      web: "volume_up",
+                    }
             }
             tintColor="#08d7ae"
             size={20}
